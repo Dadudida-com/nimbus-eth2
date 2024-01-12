@@ -1,3 +1,114 @@
+2024-01-08 v24.1.1
+==================
+
+Nimbus `v24.1.1` is a hotfix addressing a problem introduced in the `v24.1.0` release. Nimbus was crashing immediately after being connected to an execution layer node which is not fully synced. All users of `v24.1.0` are advised to upgrade at their earliest convenience.
+
+2024-01-04 v24.1.0
+==================
+
+Nimbus `v24.1.0` is a `low-urgency` upgrade bringing full support for the upcoming Cancun-Deneb hard-fork on the Goerli testnet and introducing the `/eth/v3/validator/blocks/{slot}` Beacon API end-point that greatly simplifies the implementation of profit-optimising validator clients.
+
+### Improvements
+
+* Nimbus now includes the latest Goerli-Prater metadata, scheduling the Cancun-Deneb hard-fork:
+  https://github.com/status-im/nimbus-eth2/pull/5680
+
+* The Nimbus beacon node now supports the `/eth/v3/validator/blocks/{slot}` Beacon API end-point:
+  https://github.com/status-im/nimbus-eth2/pull/5474
+  https://ethereum.github.io/beacon-APIs/?urls.primaryName=dev#/Validator/produceBlockV3
+
+* Nimbus now accepts POST requests to the `/eth/v1/beacon/states/{state_id}/validators` and `/eth/v1/beacon/states/{state_id}/validator_balances` Beacon API end-points:
+  https://github.com/status-im/nimbus-eth2/pull/5632
+  https://github.com/ethereum/beacon-APIs/pull/367
+
+* Nimbus now follows the latest specification regarding the deprecated `/eth/v1/validator/blinded_blocks/{slot}` Beacon API end-point:
+  https://github.com/status-im/nimbus-eth2/pull/5639
+
+* Nimbus now uses the latest set of bootstrap nodes for the Gnosis chain:
+  https://github.com/status-im/nimbus-eth2/pull/5656
+
+### Fixes
+
+* Nimbus was sending unnecessary redundant `forkChoiceUpdated` notifications to the execution layer:
+  https://github.com/status-im/nimbus-eth2/pull/5635
+
+* Nimbus was returning incorrect responses on requests for blocks at empty slots when working with ERA files:
+  https://github.com/status-im/nimbus-eth2/pull/5641
+
+* The Nimbus validator client was not sending Builder API registration messages at the correct time:
+  https://github.com/status-im/nimbus-eth2/pull/5663
+
+* Nimbus was ignoring a specified `--jwt-secret` option when no `--el` option was provided and the default localhost URL was being used:
+  https://github.com/status-im/nimbus-eth2/pull/5671
+  https://github.com/status-im/nimbus-eth2/issues/5665
+
+### Breaking Changes
+
+* Machine consumers of Nimbus logs should be updated, as the abbreviated value of the `NOTICE` log level has been renamed from `NOT` to `NTC`:
+  https://github.com/status-im/nimbus-eth2/pull/5634
+
+
+2023-11-28 v23.11.0
+===================
+
+Nimbus `v23.11.0` is a `low-urgency` upgrade bringing enhanced support for the Obol DVT middleware, further profit optimisations for the Nimbus validator client and a simplified and safe alternative to the trusted node sync.
+
+### Improvements
+
+* The new options `external-beacon-api-url`, `trusted-block-root` and `trusted-state-root` enable simple bootstrapping through the light client protocol and a non-trusted Beacon API provider:
+  https://nimbus.guide/start-syncing.html#checkpoint-sync
+  https://github.com/status-im/nimbus-eth2/pull/5545
+
+* Improved scoring algorithms allow the Nimbus validator client to maximize block rewards when working with multiple beacon nodes:
+  https://github.com/status-im/nimbus-eth2/pull/5447
+
+* Nimbus now supports the `/eth/v1/validator/beacon_committee_selections` and `/eth/v1/validator/sync_committee_selections` Beacon API endpoints used by the Charon Obol middleware:
+  https://github.com/status-im/nimbus-eth2/pull/5375
+
+* Efficient bulk write operations to the slashing protection database bring significant performance improvements when operating very large number of validators on a single machine (e.g. more than 10K):
+  https://github.com/status-im/nimbus-eth2/pull/5604
+
+* Nimbus now disconnects peers who are behaving poorly with respect to the beacon chain request/response protocols and peers who are exceeding the GossipSub rate limits:
+  https://github.com/status-im/nimbus-eth2/pull/5579
+  https://github.com/status-im/nimbus-eth2/pull/5482
+
+* The Nimbus guide now features light and dark themes:
+  https://github.com/status-im/nimbus-eth2/pull/5564
+
+* Nimbus now honours the `MIN_EPOCHS_FOR_BLOCK_REQUESTS` network configuration parameter:
+  https://github.com/status-im/nimbus-eth2/pull/5590
+
+### Fixes
+
+* The REST API endpoint `/eth/v1/node/peers_count` was producing an incorrectly encoded numeric response:
+  https://github.com/status-im/nimbus-eth2/pull/5548
+
+* The REST API endpoint `eth/v2/beacon/blocks` was not handling the `broadcast_validation` parameter in accordance to the spec:
+  https://github.com/status-im/nimbus-eth2/issues/5531
+
+* The validator client slashing database was not pruned:
+  https://github.com/status-im/nimbus-eth2/pull/5551
+
+* Light clients following the event stream of light client updates delivered through the REST API or the P2P protocols were at risk of getting stuck due to missing notifications for certain key events:
+  https://github.com/status-im/nimbus-eth2/pull/5602
+  https://github.com/ethereum/consensus-specs/pull/3549
+
+* Regression in v23.10.0 was preventing the Nimbus validator client from registering its validators with the external builder when no validators have been attached to the associated beacon node, effectively disabling the usage of the builder:
+  https://github.com/status-im/nimbus-eth2/pull/5603
+
+* Nimbus was not retrying certain syncing requests after receiving an invalid response from a peer:
+  https://github.com/status-im/nimbus-eth2/pull/5615
+
+* A theoretical possibility where Nimbus may fail to start after a clean shutdown has been addressed:
+  https://github.com/status-im/nimbus-eth2/pull/5617
+
+
+2023-11-06 v23.10.1
+===================
+
+Nimbus `v23.10.1` is a `low-urgency` hotfix release addressing a peer scoring issue introduced in the `v23.10.0` release. The issue manifests under specific network circumstances as a buildup of gossip topics with a low number of peers. Affected users are advised to upgrade at their earliest convenience.
+
+
 2023-10-17 v23.10.0
 ===================
 
