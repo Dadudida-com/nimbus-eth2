@@ -65,7 +65,7 @@ type LightClientConf* = object
     desc: "Listening address for the Ethereum LibP2P and Discovery v5 traffic"
     defaultValue: defaultListenAddress
     defaultValueDesc: $defaultListenAddressDesc
-    name: "listen-address" .}: ValidIpAddress
+    name: "listen-address" .}: IpAddress
 
   tcpPort* {.
     desc: "Listening TCP port for Ethereum LibP2P traffic"
@@ -170,8 +170,9 @@ proc engineApiUrls*(config: LightClientConf): seq[EngineApiUrl] =
   let elUrls = if config.noEl:
     return newSeq[EngineApiUrl]()
   elif config.elUrls.len == 0 and config.web3Urls.len == 0:
-    @[defaultEngineApiUrl]
+    @[getDefaultEngineApiUrl(config.jwtSecret)]
   else:
     config.elUrls
 
-  (elUrls & config.web3Urls).toFinalEngineApiUrls(config.jwtSecret)
+  (elUrls & config.web3Urls).toFinalEngineApiUrls(
+    config.jwtSecret.configJwtSecretOpt)
