@@ -110,7 +110,7 @@ proc isGossipSupported*(
     finalizedPeriod = self.getFinalizedPeriod(),
     isNextSyncCommitteeKnown = self.isNextSyncCommitteeKnown())
 
-# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.2/specs/altair/light-client/p2p-interface.md#getlightclientbootstrap
+# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.5/specs/altair/light-client/p2p-interface.md#getlightclientbootstrap
 proc doRequest(
     e: typedesc[Bootstrap],
     peer: Peer,
@@ -119,7 +119,7 @@ proc doRequest(
     raises: [IOError].} =
   peer.lightClientBootstrap(blockRoot)
 
-# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.2/specs/altair/light-client/p2p-interface.md#lightclientupdatesbyrange
+# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.5/specs/altair/light-client/p2p-interface.md#lightclientupdatesbyrange
 type LightClientUpdatesByRangeResponse =
   NetRes[List[ForkedLightClientUpdate, MAX_REQUEST_LIGHT_CLIENT_UPDATES]]
 proc doRequest(
@@ -127,7 +127,7 @@ proc doRequest(
     peer: Peer,
     key: tuple[startPeriod: SyncCommitteePeriod, count: uint64]
 ): Future[LightClientUpdatesByRangeResponse] {.
-    async, raises: [IOError].} =
+    async.} =
   let (startPeriod, count) = key
   doAssert count > 0 and count <= MAX_REQUEST_LIGHT_CLIENT_UPDATES
   let response = await peer.lightClientUpdatesByRange(startPeriod, count)
@@ -138,20 +138,18 @@ proc doRequest(
       raise newException(ResponseError, e.error)
   return response
 
-# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.2/specs/altair/light-client/p2p-interface.md#getlightclientfinalityupdate
+# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.5/specs/altair/light-client/p2p-interface.md#getlightclientfinalityupdate
 proc doRequest(
     e: typedesc[FinalityUpdate],
     peer: Peer
-): Future[NetRes[ForkedLightClientFinalityUpdate]] {.
-    raises: [IOError].} =
+): Future[NetRes[ForkedLightClientFinalityUpdate]] =
   peer.lightClientFinalityUpdate()
 
-# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.2/specs/altair/light-client/p2p-interface.md#getlightclientoptimisticupdate
+# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.5/specs/altair/light-client/p2p-interface.md#getlightclientoptimisticupdate
 proc doRequest(
     e: typedesc[OptimisticUpdate],
     peer: Peer
-): Future[NetRes[ForkedLightClientOptimisticUpdate]] {.
-    raises: [IOError].} =
+): Future[NetRes[ForkedLightClientOptimisticUpdate]] =
   peer.lightClientOptimisticUpdate()
 
 template valueVerifier[E](
@@ -279,10 +277,10 @@ proc query[E](
       let didProgress = cast[Future[bool]](future).read()
       if didProgress and not progressFut.finished:
         progressFut.complete()
-    except CancelledError as exc:
+    except CancelledError:
       if not progressFut.finished:
         progressFut.cancelSoon()
-    except CatchableError as exc:
+    except CatchableError:
       discard
     finally:
       inc numCompleted
@@ -297,7 +295,7 @@ proc query[E](
         workers[i].addCallback(handleFinishedWorker)
       except CancelledError as exc:
         raise exc
-      except CatchableError as exc:
+      except CatchableError:
         workers[i] = newFuture[bool]()
         workers[i].complete(false)
 
@@ -316,13 +314,13 @@ proc query[E](
       try:
         await allFutures(workers[0 ..< maxCompleted])
         break
-      except CancelledError as exc:
+      except CancelledError:
         continue
     while true:
       try:
         await doneFut
         break
-      except CancelledError as exc:
+      except CancelledError:
         continue
 
   if not progressFut.finished:
@@ -335,7 +333,7 @@ template query[E](
 ): Future[bool] =
   self.query(e, Nothing())
 
-# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.2/specs/altair/light-client/light-client.md#light-client-sync-process
+# https://github.com/ethereum/consensus-specs/blob/v1.4.0-beta.5/specs/altair/light-client/light-client.md#light-client-sync-process
 proc loop(self: LightClientManager) {.async.} =
   var nextSyncTaskTime = self.getBeaconTime()
   while true:

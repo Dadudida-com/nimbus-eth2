@@ -8,7 +8,7 @@
 {.push raises: [].}
 
 import
-  std/[strutils, os, options, unicode, uri],
+  std/[options, unicode, uri],
   metrics,
 
   chronicles, chronicles/options as chroniclesOptions,
@@ -20,7 +20,7 @@ import
   stew/[io2, byteutils], unicodedb/properties, normalize,
   eth/common/eth_types as commonEthTypes, eth/net/nat,
   eth/p2p/discoveryv5/enr,
-  json_serialization, web3/[ethtypes, confutils_defs],
+  json_serialization, web3/[primitives, confutils_defs],
   kzg4844/kzg_ex,
   ./spec/[engine_authentication, keystore, network, crypto],
   ./spec/datatypes/base,
@@ -29,6 +29,8 @@ import
   ./el/el_conf,
   ./filepath
 
+from std/os import getHomeDir, parentDir, `/`
+from std/strutils import parseBiggestUInt, replace
 from fork_choice/fork_choice_types
   import ForkChoiceVersion
 from consensus_object_pools/block_pools_types_light_client
@@ -36,7 +38,7 @@ from consensus_object_pools/block_pools_types_light_client
 
 export
   uri, nat, enr,
-  defaultEth2TcpPort, enabledLogLevel, ValidIpAddress,
+  defaultEth2TcpPort, enabledLogLevel,
   defs, parseCmdArg, completeCmdArg, network_metadata,
   el_conf, network, BlockHashOrNumber,
   confTomlDefs, confTomlNet, confTomlUri,
@@ -47,8 +49,8 @@ declareGauge network_name, "network name", ["name"]
 const
   # TODO: How should we select between IPv4 and IPv6
   # Maybe there should be a config option for this.
-  defaultListenAddress* = (static ValidIpAddress.init("0.0.0.0"))
-  defaultAdminListenAddress* = (static ValidIpAddress.init("127.0.0.1"))
+  defaultListenAddress* = (static parseIpAddress("0.0.0.0"))
+  defaultAdminListenAddress* = (static parseIpAddress("127.0.0.1"))
   defaultSigningNodeRequestTimeout* = 60
   defaultBeaconNode* = "http://127.0.0.1:" & $defaultEth2RestPort
   defaultBeaconNodeUri* = parseUri(defaultBeaconNode)
@@ -56,7 +58,7 @@ const
 
   defaultListenAddressDesc* = $defaultListenAddress
   defaultAdminListenAddressDesc* = $defaultAdminListenAddress
-  defaultBeaconNodeDesc* = $defaultBeaconNode
+  defaultBeaconNodeDesc = $defaultBeaconNode
 
 when defined(windows):
   {.pragma: windowsOnly.}
@@ -292,7 +294,7 @@ type
         desc: "Listening address for the Ethereum LibP2P and Discovery v5 traffic"
         defaultValue: defaultListenAddress
         defaultValueDesc: $defaultListenAddressDesc
-        name: "listen-address" .}: ValidIpAddress
+        name: "listen-address" .}: IpAddress
 
       tcpPort* {.
         desc: "Listening TCP port for Ethereum LibP2P traffic"
@@ -339,15 +341,26 @@ type
         desc: "Weak subjectivity checkpoint in the format block_root:epoch_number"
         name: "weak-subjectivity-checkpoint" .}: Option[Checkpoint]
 
+      externalBeaconApiUrl* {.
+        desc: "External beacon API to use for syncing (on empty database)"
+        name: "external-beacon-api-url" .}: Option[string]
+
       syncLightClient* {.
-        desc: "Accelerate execution layer sync using light client"
+        desc: "Accelerate sync using light client"
         defaultValue: true
         name: "sync-light-client" .}: bool
 
       trustedBlockRoot* {.
-        hidden
-        desc: "Recent trusted finalized block root to initialize light client from"
+        desc: "Recent trusted finalized block root to sync from external " &
+              "beacon API (with `--external-beacon-api-url`). " &
+              "Uses the light client sync protocol to obtain the latest " &
+              "finalized checkpoint (LC is initialized from trusted block root)"
         name: "trusted-block-root" .}: Option[Eth2Digest]
+
+      trustedStateRoot* {.
+        desc: "Recent trusted finalized state root to sync from external " &
+              "beacon API (with `--external-beacon-api-url`)"
+        name: "trusted-state-root" .}: Option[Eth2Digest]
 
       finalizedCheckpointState* {.
         desc: "SSZ file specifying a recent finalized state"
@@ -408,7 +421,7 @@ type
         desc: "Listening address of the metrics server"
         defaultValue: defaultAdminListenAddress
         defaultValueDesc: $defaultAdminListenAddressDesc
-        name: "metrics-address" .}: ValidIpAddress
+        name: "metrics-address" .}: IpAddress
 
       metricsPort* {.
         desc: "Listening HTTP port of the metrics server"
@@ -449,7 +462,7 @@ type
         # Deprecated > 1.7.0
         hidden
         desc: "Deprecated for removal"
-        name: "rpc-address" .}: Option[ValidIpAddress]
+        name: "rpc-address" .}: Option[IpAddress]
 
       restEnabled* {.
         desc: "Enable the REST server"
@@ -466,7 +479,7 @@ type
         desc: "Listening address of the REST server"
         defaultValue: defaultAdminListenAddress
         defaultValueDesc: $defaultAdminListenAddressDesc
-        name: "rest-address" .}: ValidIpAddress
+        name: "rest-address" .}: IpAddress
 
       restAllowedOrigin* {.
         desc: "Limit the access to the REST API to a particular hostname " &
@@ -520,7 +533,7 @@ type
         desc: "Listening port for the REST keymanager API"
         defaultValue: defaultAdminListenAddress
         defaultValueDesc: $defaultAdminListenAddressDesc
-        name: "keymanager-address" .}: ValidIpAddress
+        name: "keymanager-address" .}: IpAddress
 
       keymanagerAllowedOrigin* {.
         desc: "Limit the access to the Keymanager API to a particular hostname " &
@@ -776,7 +789,7 @@ type
       of RecordCmd.create:
         ipExt* {.
           desc: "External IP address"
-          name: "ip" .}: ValidIpAddress
+          name: "ip" .}: IpAddress
 
         tcpPortExt* {.
           desc: "External TCP port"
@@ -973,7 +986,7 @@ type
       desc: "Listening port for the REST keymanager API"
       defaultValue: defaultAdminListenAddress
       defaultValueDesc: $defaultAdminListenAddressDesc
-      name: "keymanager-address" .}: ValidIpAddress
+      name: "keymanager-address" .}: IpAddress
 
     keymanagerAllowedOrigin* {.
       desc: "Limit the access to the Keymanager API to a particular hostname " &
@@ -993,7 +1006,7 @@ type
       desc: "Listening address of the metrics server (BETA)"
       defaultValue: defaultAdminListenAddress
       defaultValueDesc: $defaultAdminListenAddressDesc
-      name: "metrics-address" .}: ValidIpAddress
+      name: "metrics-address" .}: IpAddress
 
     metricsPort* {.
       desc: "Listening HTTP port of the metrics server (BETA)"
@@ -1015,6 +1028,11 @@ type
       desc: "Enable usage of beacon node with external payload builder (BETA)"
       defaultValue: false
       name: "payload-builder" .}: bool
+
+    distributedEnabled* {.
+      desc: "Enable usage of Obol middleware (BETA)"
+      defaultValue: false
+      name: "distributed".}: bool
 
     beaconNodes* {.
       desc: "URL addresses to one or more beacon node HTTP REST APIs",
@@ -1091,7 +1109,7 @@ type
       desc: "Listening address of the REST HTTP server"
       defaultValue: defaultAdminListenAddress
       defaultValueDesc: $defaultAdminListenAddressDesc
-      name: "bind-address" .}: ValidIpAddress
+      name: "bind-address" .}: IpAddress
 
     tlsEnabled* {.
       desc: "Use secure TLS communication for REST server"
@@ -1308,10 +1326,10 @@ func runAsService*(config: BeaconNodeConf): bool =
     false
 
 func web3SignerUrls*(conf: AnyConf): seq[Web3SignerUrl] =
-  for url in conf.web3signers:
+  for url in conf.web3Signers:
     result.add Web3SignerUrl(url: url)
 
-  for url in conf.verifyingWeb3signers:
+  for url in conf.verifyingWeb3Signers:
     result.add Web3SignerUrl(url: url,
                              provenBlockProperties: conf.provenBlockProperties)
 
@@ -1417,11 +1435,11 @@ func defaultFeeRecipient*(conf: AnyConf): Opt[Eth1Address] =
     # https://github.com/nim-lang/Nim/issues/19802
     (static(Opt.none Eth1Address))
 
-proc loadJwtSecret*(
+proc loadJwtSecret(
     rng: var HmacDrbgContext,
     dataDir: string,
-    jwtSecret: Option[InputFile],
-    allowCreate: bool): Option[seq[byte]] =
+    jwtSecret: Opt[InputFile],
+    allowCreate: bool): Opt[seq[byte]] =
   # Some Web3 endpoints aren't compatible with JWT, but if explicitly chosen,
   # use it regardless.
   if jwtSecret.isSome or allowCreate:
@@ -1431,38 +1449,40 @@ proc loadJwtSecret*(
         err = secret.error
       quit 1
 
-    some secret.get
+    Opt.some secret.get
   else:
-    none(seq[byte])
+    Opt.none seq[byte]
+
+func configJwtSecretOpt*(jwtSecret: Option[InputFile]): Opt[InputFile] =
+  if jwtSecret.isSome:
+    Opt.some jwtSecret.get
+  else:
+    Opt.none InputFile
 
 proc loadJwtSecret*(
     rng: var HmacDrbgContext,
     config: BeaconNodeConf,
-    allowCreate: bool): Option[seq[byte]] =
-  rng.loadJwtSecret(string(config.dataDir), config.jwtSecret, allowCreate)
+    allowCreate: bool): Opt[seq[byte]] =
+  rng.loadJwtSecret(
+    string(config.dataDir), config.jwtSecret.configJwtSecretOpt, allowCreate)
 
 proc engineApiUrls*(config: BeaconNodeConf): seq[EngineApiUrl] =
   let elUrls = if config.noEl:
     return newSeq[EngineApiUrl]()
   elif config.elUrls.len == 0 and config.web3Urls.len == 0:
-    @[defaultEngineApiUrl]
+    @[getDefaultEngineApiUrl(config.jwtSecret)]
   else:
     config.elUrls
 
-  (elUrls & config.web3Urls).toFinalEngineApiUrls(config.jwtSecret)
+  (elUrls & config.web3Urls).toFinalEngineApiUrls(
+    config.jwtSecret.configJwtSecretOpt)
 
 proc loadKzgTrustedSetup*(): Result[void, string] =
   const
     vendorDir = currentSourcePath.parentDir.replace('\\', '/') & "/../vendor"
-    trustedSetupDir = vendorDir & "/nim-kzg4844/kzg4844/csources/src"
+    trustedSetup = staticRead(
+      vendorDir & "/nim-kzg4844/kzg4844/csources/src/trusted_setup.txt")
 
-  const trustedSetup =
-    when const_preset == "mainnet":
-      staticRead trustedSetupDir & "/trusted_setup.txt"
-    elif const_preset == "minimal":
-      staticRead trustedSetupDir & "/trusted_setup_4.txt"
-    else:
-      ""
   if const_preset == "mainnet" or const_preset == "minimal":
     Kzg.loadTrustedSetupFromString(trustedSetup)
   else:

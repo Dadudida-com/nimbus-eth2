@@ -8,7 +8,7 @@
 {.push raises: [].}
 
 import
-  chronicles, chronos, web3/[ethtypes, engine_api_types],
+  chronicles, chronos, web3/[primitives, engine_api_types],
   ../spec/datatypes/base,
   ../consensus_object_pools/[blockchain_dag, block_quarantine, attestation_pool],
   ../el/el_manager,
@@ -114,8 +114,6 @@ proc expectBlock*(self: var ConsensusManager, expectedSlot: Slot): Future[bool] 
 
   return fut
 
-func `$`(h: BlockHash): string = $h.asEth2Digest
-
 func shouldSyncOptimistically*(
     optimisticSlot, dagSlot, wallSlot: Slot): bool =
   ## Determine whether an optimistic execution block hash should be reported
@@ -170,19 +168,14 @@ proc updateExecutionClientHead(self: ref ConsensusManager,
       payloadAttributes = none attributes)
 
   # Can't use dag.head here because it hasn't been updated yet
-  let (payloadExecutionStatus, latestValidHash) =
-    case self.dag.cfg.consensusForkAtEpoch(newHead.blck.bid.slot.epoch)
-    of ConsensusFork.Deneb:
-      callForkchoiceUpdated(PayloadAttributesV3)
-    of ConsensusFork.Capella:
-      # https://github.com/ethereum/execution-apis/blob/v1.0.0-beta.3/src/engine/shanghai.md#specification-1
-      # Consensus layer client MUST call this method instead of
-      # `engine_forkchoiceUpdatedV1` under any of the following conditions:
-      # `headBlockHash` references a block which `timestamp` is greater or
-      # equal to the Shanghai timestamp
-      callForkchoiceUpdated(PayloadAttributesV2)
-    of ConsensusFork.Phase0, ConsensusFork.Altair, ConsensusFork.Bellatrix:
-      callForkchoiceUpdated(PayloadAttributesV1)
+  let
+    consensusFork =
+      self.dag.cfg.consensusForkAtEpoch(newHead.blck.bid.slot.epoch)
+    (payloadExecutionStatus, _) = withConsensusFork(consensusFork):
+      when consensusFork >= ConsensusFork.Bellatrix:
+        callForkchoiceUpdated(consensusFork.PayloadAttributes)
+      else:
+        callForkchoiceUpdated(PayloadAttributesV1)
 
   case payloadExecutionStatus
   of PayloadExecutionStatus.valid:
@@ -369,17 +362,6 @@ proc runProposalForkchoiceUpdated*(
       get_randao_mix(forkyState.data, get_current_epoch(forkyState.data)).data
     feeRecipient = self[].getFeeRecipient(
       nextProposer, Opt.some(validatorIndex), nextWallSlot.epoch)
-    withdrawals =
-      if self.dag.headState.kind >= ConsensusFork.Capella:
-        # Head state is not eventual proposal state, but withdrawals will be
-        # identical within an epoch.
-        withState(self.dag.headState):
-          when consensusFork >= ConsensusFork.Capella:
-            Opt.some get_expected_withdrawals(forkyState.data)
-          else:
-            Opt.none(seq[Withdrawal])
-      else:
-        Opt.none(seq[Withdrawal])
     beaconHead = self.attestationPool[].getBeaconHead(self.dag.head)
     headBlockHash = self.dag.loadExecutionBlockHash(beaconHead.blck)
 
